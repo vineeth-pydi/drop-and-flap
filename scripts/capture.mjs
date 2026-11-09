@@ -1,0 +1,13 @@
+import { chromium } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+await mkdir('.impeccable/review',{recursive:true});
+const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+const requests=[];page.on('request',request=>requests.push({url:request.url(),method:request.method()}));
+await page.goto('http://127.0.0.1:4173');await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(300);
+await page.screenshot({path:'.impeccable/review/desktop.png',fullPage:true});
+await page.getByRole('button',{name:'SETTINGS',exact:true}).click();await page.screenshot({path:'.impeccable/review/settings-desktop.png',fullPage:true});
+await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'PLAY',exact:true}).click();await page.screenshot({path:'.impeccable/review/mobile.png',fullPage:true});
+await page.getByRole('button',{name:'SETTINGS',exact:true}).click();await page.screenshot({path:'.impeccable/review/settings-mobile.png',fullPage:true});
+console.log(JSON.stringify({requests,external:requests.filter(r=>!r.url.startsWith('http://127.0.0.1:4173')&&!r.url.startsWith('blob:'))}));
+await browser.close();

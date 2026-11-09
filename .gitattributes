@@ -1,0 +1,6 @@
+* text=auto
+*.wasm binary
+*.task binary
+*.png binary
+*.gif binary
+/public/wasm/* -text -whitespace
