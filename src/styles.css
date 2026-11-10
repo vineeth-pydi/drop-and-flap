@@ -10,3 +10,4 @@
 @media(max-width:390px){.game-scoreboard .game-state-label{font-size:7px}.preview-hint{font-size:7px}}
 @media(max-width:780px){.tabs button{font-size:8px;padding:13px 8px;gap:6px;min-width:0}.tabs button svg{width:14px;height:14px}}
 @media(max-width:420px){.tabs button{font-size:7px;padding:13px 4px;gap:5px}}
+.app-update{flex-wrap:wrap}.app-update .button{font-size:9px;min-height:42px;padding:9px 12px}

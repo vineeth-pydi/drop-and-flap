@@ -17,6 +17,8 @@ Assets are included in this checkout. The asset command restores the pinned offi
 
 For a production preview: `npm run build`, then `npm run preview` at http://127.0.0.1:4173. Production is installable and works offline after the service worker finishes caching. Development mode does not register a service worker.
 
+When an installed version finds an update, **Update app** appears outside camera setup and workouts. Select it to reload into the new version. Updates never automatically reload an ongoing set. Versions before 1.1.1 do not have this button: close every app tab/window and reopen the app after its new version has downloaded.
+
 ## Play
 
 **Camera set:** prop your phone upright on a stable surface on the floor, facing you. Allow the front camera, keep your face and both shoulders visible, and use adequate light. Select **I'm in position**. Hold your top position for 3 seconds, lower slowly and hold for 4 seconds, then return to the top during the final 3-second countdown. The app captures your range and maps your nose position to the bird. A complete top-bottom-top cycle counts one rep. If tracking disappears for 0.5 seconds, gameplay pauses. Resume or end the set with the visible controls. Stop if the movement is uncomfortable; the app is a game, not a form assessment.
@@ -35,7 +37,7 @@ No account, analytics, backend, video upload, or frame persistence. Model, fonts
 
 ## Verification
 
-- `npm run check`: lint, strict TypeScript, production build, 75 deterministic unit tests.
+- `npm run check`: lint, strict TypeScript, production build, 78 deterministic unit tests.
 - `npm run test:e2e`: production browser workflow tests.
 - `npm run test:form`: actual form-screen counting/history tests using synthetic joint fixtures.
 - `node scripts/capture.mjs`: desktop/mobile visual captures and request-origin inventory.
@@ -68,6 +70,8 @@ Original application code and art: MIT. MediaPipe model/runtime: Apache 2.0. Pre
 
 ## Form-check mode
 
-The FORM tab adds experimental side-view checks, separate from the face-controlled arcade. Place the phone to the side, keep your entire body and the near-side arm in frame, choose standard or knee pushups, and start from the extended-arm position. The counter requires a complete bend-and-extend cycle and body alignment within the checks. Frames with uncertain landmarks are not graded; tracking loss pauses the set. Completed form sets are labeled separately in History.
+The FORM tab adds experimental side-view checks, separate from the face-controlled arcade. Place the phone to the side, choose standard or knee pushups, and select **Start camera**. Tap **Start form set** while you can reach the phone: an **8-second preparation countdown** gives you time to move into position. The set starts after the countdown and checks posture while running; you do not have to be detected before tapping Start. Start each rep with extended arms, your body aligned, and your whole near-side arm and body visible.
+
+The counter requires a complete bend-and-extend cycle and body alignment within the checks. Missing or uncertain landmarks and unfinished movements earn no rep. If tracking disappears, the set stays running and waits for you to reappear; return to the extended-arm position to start a fresh movement without touching the phone. **Pause** is manual; **Resume form set** also gives you an 8-second preparation countdown. Switching away from the browser pauses the set. Completed form sets are labeled separately in History. The form geometry thresholds are unchanged in version 1.1.1.
 
 This is geometric feedback from estimated 2D joints, not a certification of safe or correct technique. It cannot measure chest-to-floor clearance, force, pain, muscle activation, or all forms of elbow flare from one side camera. Real human/video accuracy still needs validation. The general body-line and elbow-extension concepts are consistent with [NASM's pushup exercise description](https://www.nasm.org/resource-center/exercise-library/push-up); numerical thresholds are this app's experimental engineering settings. MediaPipe supplies the estimated landmarks described in [Google's Pose Landmarker guide](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker).

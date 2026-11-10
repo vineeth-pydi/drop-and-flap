@@ -29,7 +29,7 @@ test('form checks request camera only on click and explain denied access without
   await expect(page.locator('.history-row')).toHaveCount(0)
 })
 
-test('a live camera with no person cannot start a form set and its tracks stop on tab change', async ({ page }) => {
+test('a live camera starts a set before a person is visible but cannot give unseen reps credit', async ({ page }) => {
   test.setTimeout(60_000)
   await page.addInitScript(() => {
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
@@ -57,15 +57,23 @@ test('a live camera with no person cannot start a form set and its tracks stop o
   await page.goto('./')
   await page.getByRole('button', { name: 'FORM', exact: true }).click()
   await page.getByRole('button', { name: 'Start camera', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Start form set', exact: true })).toBeDisabled({ timeout: 35_000 })
-  await expect(page.getByText('Whole side must be visible', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start form set', exact: true })).toBeEnabled({ timeout: 35_000 })
+  await page.getByRole('button', { name: 'Start form set', exact: true }).click()
+  await expect(page.locator('.form-panel')).toHaveAttribute('data-stage', 'countdown')
   await page.waitForTimeout(1200)
-  await expect(page.getByRole('button', { name: 'Start form set', exact: true })).toBeDisabled()
+  await expect(page.locator('.form-panel')).toHaveAttribute('data-stage', 'countdown')
+  await expect(page.locator('.form-panel')).toHaveAttribute('data-stage', 'active', { timeout: 10_000 })
+  await page.waitForTimeout(800)
+  await expect(page.locator('.form-panel')).toHaveAttribute('data-stage', 'active')
   await expect(page.getByLabel('Reps meeting checks', { exact: true })).toHaveText('0')
-  await page.getByRole('button', { name: 'PLAY', exact: true }).click()
+  await expect(page.getByLabel('Full attempts not meeting checks', { exact: true })).toHaveText('0')
+  await page.getByRole('button', { name: 'End form set', exact: true }).click()
+  await expect(page.locator('.form-result-count strong')).toHaveText('0')
+  await expect(page.getByText('Saved to your workout history.', { exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => (window as typeof window & { formCameraTrack: MediaStreamTrack }).formCameraTrack.readyState)).toBe('ended')
   await page.getByRole('button', { name: 'HISTORY', exact: true }).click()
-  await expect(page.locator('.history-row')).toHaveCount(0)
+  await expect(page.locator('.history-row')).toHaveCount(1)
+  await expect(page.locator('.history-value').first().locator('strong')).toHaveText('0')
 })
 
 test('form setup fits a 390px screen and leaves real checks unknown before camera access', async ({ page }) => {

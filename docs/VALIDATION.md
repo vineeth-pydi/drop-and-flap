@@ -66,3 +66,9 @@ The independent visual review approved the captured Form setup at desktop/phone 
 
 
 The two synthetic-pose interface scenarios also pass through the actual React app in Strict Mode. They demonstrate one accepted cycle, one sustained hip-fault rejection with persistent feedback, no extra rep after pausing a partial movement, navigation locking, stream/source shutdown, one persisted/reloaded Form history record, and separate Standard/Knees readiness. These controls are test-harness-only and are not included in the production entry or exposed by URL parameters.
+
+## V1.1.1 start-before-positioning fix
+
+The Form Start and Resume actions now begin an 8-second preparation countdown without a pose requirement. Posture checks run after the countdown, and missing or stale tracking clears partial movements while the set waits for automatic recovery. Geometry and rep-counting thresholds remain unchanged. The app offers user-initiated updates outside camera setup and workouts, and another tab activating an update cannot automatically reload an ongoing set.
+
+Lint, strict TypeScript, production build, and 78 deterministic unit tests pass. This includes three update-lifecycle tests covering explicit activation, no pending update, and protection against another tab's update. The 3 synthetic Form interface scenarios and 10 production browser scenarios at /drop-and-flap/ also pass, including starting with no detected body, entering the frame after preparation, rejection of posture faults, automatic tracking recovery, and resuming while outside the frame. GitHub deployment and live HTTPS behavior are verified separately from these local checks. These checks do not establish accuracy on real people.

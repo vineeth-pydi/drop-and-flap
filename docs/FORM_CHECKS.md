@@ -2,6 +2,8 @@
 
 Form mode estimates visible side-view joint geometry. It counts movements that meet the rules below, and does not certify correct or safe technique.
 
+Start the camera, then tap **Start form set** before moving away from the phone. An **8-second preparation countdown** runs regardless of whether a body is detected. Afterward, the set runs and checks posture. Missing or unsuitable posture cannot count a rep; the app waits for a usable extended-arm position and a complete movement. Tracking loss clears an unfinished movement but does not require another tap: return to the top and continue. Manual **Pause** stops the set; **Resume form set** uses the same preparation countdown. Leaving the browser tab pauses the set. These setup changes do not relax any geometry or counting thresholds.
+
 | Check | Current engineering rule |
 | --- | --- |
 | Visible landmarks | Near-side shoulder, elbow, wrist, hip, and knee need visibility/presence at least 0.6; Standard also requires ankle |

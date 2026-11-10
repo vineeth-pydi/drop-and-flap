@@ -25,7 +25,7 @@ interface Runtime {
   variant: FormVariant
   assessment: FormAssessment | null
   lastTimestamp: number
-  lastTrackableAt: number
+  lastFrameAt: number
   countdownAt: number
   countdownReturn: 'ready' | 'paused'
   activeAt: number | null
@@ -39,16 +39,11 @@ interface Runtime {
 }
 
 const LOST_TRACKING_MS = 500
-const COUNTDOWN_MS = 3000
-const START_FRESH_MS = 250
+const COUNTDOWN_MS = 8000
 
 function timeLabel(seconds: number) {
   const whole = Math.max(0, Math.round(seconds))
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
-}
-
-function isReady(assessment: FormAssessment | null) {
-  return !!assessment?.trackable && assessment.atTop && assessment.alignment === 'aligned' && assessment.issues.length === 0
 }
 
 function FitGuide() {
@@ -83,7 +78,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
   const [aspectRatio, setAspectRatio] = useState(4 / 3)
   const [counts, setCounts] = useState({ reps: 0, rejected: 0, feedback: 'Start with straight arms at the top.' })
   const [seconds, setSeconds] = useState(0)
-  const [countdown, setCountdown] = useState(3)
+  const [countdown, setCountdown] = useState(COUNTDOWN_MS / 1000)
   const [fresh, setFresh] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -97,7 +92,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
   const cameraSession = useRef(0)
   const mounted = useRef(false)
   const latest = useRef({ settings, onSaved, onNotice, onActiveChange, poseSourceFactory })
-  const runtime = useRef<Runtime>({ stage: 'intro', variant: 'standard', assessment: null, lastTimestamp: -Infinity, lastTrackableAt: -Infinity, countdownAt: 0, countdownReturn: 'ready', activeAt: null, activeMs: 0, hasStarted: false, finished: false, saving: false, saved: false, theme: settings.theme, difficulty: settings.difficulty })
+  const runtime = useRef<Runtime>({ stage: 'intro', variant: 'standard', assessment: null, lastTimestamp: -Infinity, lastFrameAt: -Infinity, countdownAt: 0, countdownReturn: 'ready', activeAt: null, activeMs: 0, hasStarted: false, finished: false, saving: false, saved: false, theme: settings.theme, difficulty: settings.difficulty })
 
   useEffect(() => { latest.current = { settings, onSaved, onNotice, onActiveChange, poseSourceFactory } }, [settings, onSaved, onNotice, onActiveChange, poseSourceFactory])
 
@@ -117,7 +112,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     stream.current = null
     if (video.current) video.current.srcObject = null
     runtime.current.assessment = null
-    runtime.current.lastTrackableAt = -Infinity
+    runtime.current.lastFrameAt = -Infinity
   }, [])
 
   const pause = useCallback((reason: string) => {
@@ -136,11 +131,11 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     const tick = window.setInterval(() => {
       const current = runtime.current
       const now = performance.now()
-      const hasFreshPose = now - current.lastTrackableAt < START_FRESH_MS && !!current.assessment?.trackable
+      const hasFreshPose = now - current.lastFrameAt < LOST_TRACKING_MS && current.assessment !== null
       setFresh(hasFreshPose)
       if (current.stage === 'countdown') {
-        if (!isReady(current.assessment) || !hasFreshPose || document.hidden) {
-          pause('Countdown stopped. Return to the top position with your whole side visible.')
+        if (document.hidden) {
+          pause('Preparation paused while this tab was away. Tap Start or Resume when you return.')
         } else {
           const remaining = COUNTDOWN_MS - (now - current.countdownAt)
           setCountdown(Math.max(1, Math.ceil(remaining / 1000)))
@@ -150,14 +145,15 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
             counter.discardPartial()
             changeStage('active')
             setMessage('')
-            void keepAwake()
           }
         }
       }
-      if (current.stage === 'active' && now - current.lastTrackableAt >= LOST_TRACKING_MS) pause('Tracking paused. Fit your whole side in view, then return to the top position.')
+      // Losing the body must not send the user back to the phone. Reset the
+      // unfinished movement, keep the set running, and reacquire automatically.
+      if (current.stage === 'active' && !hasFreshPose) counter.discardPartial()
       if (current.stage === 'active' || current.stage === 'paused') setSeconds((current.activeMs + (current.activeAt === null ? 0 : now - current.activeAt)) / 1000)
     }, 100)
-    const visibility = () => { if (document.hidden) pause('Paused while this tab was away. Return to the top position to resume.') }
+    const visibility = () => { if (document.hidden) pause('Paused while this tab was away. Tap Resume first, then get into position.') }
     document.addEventListener('visibilitychange', visibility)
     return () => {
       mounted.current = false
@@ -178,7 +174,6 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
       counter.discardPartial()
       setAssessment(null)
       setLandmarks([])
-      if (current.stage === 'countdown') pause('Countdown stopped. Fit your whole side in the frame, then hold the top position.')
       return
     }
     if (!Number.isFinite(frame.timestamp) || frame.timestamp <= current.lastTimestamp) return
@@ -194,12 +189,12 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     const ratio = video.current && video.current.videoWidth > 0 && video.current.videoHeight > 0 ? video.current.videoWidth / video.current.videoHeight : 4 / 3
     const next = assessPushupForm(frame.landmarks, ratio, current.variant)
     current.assessment = next
-    if (next.trackable) current.lastTrackableAt = frame.timestamp
+    current.lastFrameAt = frame.timestamp
+    setFresh(true)
     setAspectRatio(ratio)
     setAssessment(next)
     setLandmarks(frame.landmarks)
     if (document.hidden) return
-    if (current.stage === 'countdown' && !isReady(next)) pause('Countdown stopped. Hold straight arms and an aligned body at the top.')
     if (current.stage === 'active') {
       const counted = counter.update(next, frame.timestamp)
       setCounts({ reps: counter.count, rejected: counter.rejected, feedback: counter.lastFeedback })
@@ -208,7 +203,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
         try { audio.play('score', getTheme(latest.current.settings.theme), latest.current.settings.sound) } catch { /* Audio support does not affect form checks. */ }
       }
     }
-  }, [audio, counter, pause])
+  }, [audio, counter])
 
   const startCamera = async () => {
     if (runtime.current.stage === 'loading') return
@@ -244,7 +239,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
       await tracker.start(video.current, (frame) => handleFrame(frame, session))
       if (!mounted.current || session !== cameraSession.current) return
       changeStage(runtime.current.hasStarted ? 'paused' : 'ready')
-      setMessage(runtime.current.hasStarted ? 'Camera reconnected. Hold the top position to resume.' : '')
+      setMessage(runtime.current.hasStarted ? 'Camera reconnected. Tap Resume first, then get into position.' : '')
     } catch (failure) {
       if (!mounted.current || session !== cameraSession.current) return
       releaseCamera()
@@ -255,7 +250,7 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
 
   const beginCountdown = () => {
     const current = runtime.current
-    if (!['ready', 'paused'].includes(current.stage) || !isReady(current.assessment) || performance.now() - current.lastTrackableAt >= START_FRESH_MS) return
+    if (!['ready', 'paused'].includes(current.stage) || !source.current || !stream.current) return
     current.countdownReturn = current.hasStarted ? 'paused' : 'ready'
     if (!current.hasStarted) {
       counter.reset()
@@ -269,9 +264,10 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     }
     counter.discardPartial()
     current.countdownAt = performance.now()
-    setCountdown(3)
-    setMessage('Hold the top position for the countdown.')
+    setCountdown(COUNTDOWN_MS / 1000)
+    setMessage('Get into position. Posture checks begin after the countdown. Need longer? The set will wait for you.')
     changeStage('countdown')
+    void keepAwake()
   }
 
   const persistSummary = async (set: WorkoutSet) => {
@@ -313,6 +309,8 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     setAssessment(null)
     setLandmarks([])
     setError('')
+    setMessage('')
+    void releaseAwake()
     changeStage('intro')
   }
 
@@ -345,10 +343,11 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
   }
 
   const cameraOn = ['ready', 'countdown', 'active', 'paused'].includes(stage)
-  const canStart = fresh && isReady(assessment)
+  const liveAssessment = fresh ? assessment : null
   const lockedVariant = ['loading', 'countdown', 'active', 'paused'].includes(stage) || runtime.current.hasStarted
-  const alignmentLabel = !assessment?.trackable ? 'Not visible' : ({ aligned: 'Aligned', 'hips-raised': 'Hips raised', 'hips-sagging': 'Hips low', unknown: 'Not visible' })[assessment.alignment]
-  const cue = message || (cameraOn ? assessment?.cue || 'Fit your whole side in view. Keep your shoulder, wrist, hip, knees, and ankles visible.' : 'Set the camera beside you, with your whole body in view.')
+  const alignmentLabel = !liveAssessment?.trackable ? 'Not visible' : ({ aligned: 'Aligned', 'hips-raised': 'Hips raised', 'hips-sagging': 'Hips low', unknown: 'Not visible' })[liveAssessment.alignment]
+  const visibleJoints = variant === 'knees' ? 'shoulder, elbow, wrist, hip, and knee' : 'shoulder, elbow, wrist, hip, knee, and ankle'
+  const cue = message || (cameraOn ? liveAssessment?.cue || (stage === 'active' ? `Set is running. Show your ${visibleJoints} from the side. Tracking will pick up automatically; start with straight arms at the top.` : 'Tap Start form set first. You have 8 seconds to get into position, and more time if you need it.') : 'Set the camera beside you, with your whole body in view.')
 
   return <section className="panel form-panel" data-stage={stage} aria-labelledby="form-title">
     <div className="section-head form-heading"><div><h2 className="panel-title" id="form-title">Check your form.</h2><p className="subtitle">Side-view cues. Every full movement gets a closer look.</p></div><span className="form-local"><Icon name="shield" size={16} /> On your device</span></div>
@@ -362,34 +361,35 @@ export default function FormCheckPanel({ settings, onSaved, onNotice, onActiveCh
     </div> : <div className="form-layout">
       <div className="form-instructions">
         <h3>A different camera angle.</h3><p>Form checks need a whole-body side view. The arcade’s front-facing nose tracker cannot check your form.</p>
-        <ol className="form-setup-steps"><li>Prop your phone beside you. Keep it steady and leave room for your whole body.</li><li>Keep your shoulder, wrist, hip, knees, and ankles visible. Use good light.</li><li>At the top, straighten your arms and hold your body in line. Then start your set.</li></ol>
+        <ol className="form-setup-steps"><li>Prop your phone beside you. Keep it steady and leave room for your whole body.</li><li>Start the camera, then tap Start form set. You do not need to be in position yet.</li><li>Use the 8-second countdown to get into position. Straighten your arms at the top. Posture checks begin afterward and wait if you need longer.</li></ol>
         <fieldset className="form-variants" disabled={lockedVariant}><legend>Push-up variation</legend><label><input type="radio" name="form-variant" value="standard" checked={variant === 'standard'} onChange={() => changeVariant('standard')} /><span>Standard<small>Support through your feet</small></span></label><label><input type="radio" name="form-variant" value="knees" checked={variant === 'knees'} onChange={() => changeVariant('knees')} /><span>Knees<small>Support through your knees</small></span></label></fieldset>
         <div className="form-count-rule"><strong>What gets counted?</strong><p>A visible top–bottom–top cycle with enough elbow bend and body alignment. Pause or tracking loss resets an unfinished movement.</p></div>
         {error && <div className="form-error" role="alert"><strong>Camera unavailable</strong><p>{error}</p><p>Form checks require a camera. Change its browser permission or close another app using it, then retry.</p></div>}
         <div className="form-actions">
           {(stage === 'intro' || stage === 'error') && <button className="button primary" type="button" onClick={() => void startCamera()}><Icon name="camera" />{stage === 'error' ? 'Retry camera' : 'Start camera'}</button>}
           {stage === 'loading' && <button className="button secondary" type="button" onClick={stopBeforeSet}>Cancel camera setup</button>}
-          {(stage === 'ready' || stage === 'paused') && <button className="button primary" type="button" disabled={!canStart} onClick={beginCountdown}><Icon name="play" />{stage === 'paused' ? 'Resume form set' : 'Start form set'}</button>}
-          {stage === 'active' && <button className="button secondary" type="button" onClick={() => pause('Set paused. Return to the top position before resuming.')}><Icon name="pause" />Pause</button>}
-          {stage === 'countdown' && <button className="button secondary" type="button" onClick={() => pause('Countdown cancelled. Hold the top position when you are ready.')}>Cancel countdown</button>}
+          {(stage === 'ready' || stage === 'paused') && <button className="button primary" type="button" onClick={beginCountdown}><Icon name="play" />{stage === 'paused' ? 'Resume form set' : 'Start form set'}</button>}
+          {stage === 'active' && <button className="button secondary" type="button" onClick={() => pause('Set paused. Tap Resume first, then use the countdown to get into position.')}><Icon name="pause" />Pause</button>}
+          {stage === 'countdown' && <button className="button secondary" type="button" onClick={() => pause('Countdown cancelled. Tap Start or Resume whenever you are ready.')}>Cancel countdown</button>}
           {stage === 'ready' && <button className="text-button" type="button" onClick={stopBeforeSet}>Stop camera</button>}
           {runtime.current.hasStarted && <button className="button secondary" type="button" onClick={finishSet}>End form set</button>}
         </div>
+        {(stage === 'ready' || stage === 'paused') && <p className="form-start-note">Tap first, get into position afterward. The 8-second countdown runs even while you are outside the frame.</p>}
         <p className="form-private-note"><Icon name="shield" size={15} />No video or joint coordinates are saved. History stores counts and set details.</p>
       </div>
       <div className="form-monitor">
-        <div className="form-camera-top"><span>{stage === 'active' ? 'FORM SET LIVE' : stage === 'paused' ? 'SET PAUSED' : stage === 'loading' ? 'OPENING CAMERA' : cameraOn ? 'FIND YOUR POSITION' : 'SIDE-VIEW SETUP'}</span><span>{timeLabel(seconds)}</span></div>
+        <div className="form-camera-top"><span>{stage === 'active' ? 'FORM SET LIVE' : stage === 'countdown' ? 'GET INTO POSITION' : stage === 'paused' ? 'SET PAUSED' : stage === 'loading' ? 'OPENING CAMERA' : cameraOn ? 'READY TO START' : 'SIDE-VIEW SETUP'}</span><span>{timeLabel(seconds)}</span></div>
         <div className={`form-camera-frame ${cameraOn ? 'camera-on' : ''}`} style={{ aspectRatio }}>
           <video ref={video} className="form-video" autoPlay muted playsInline aria-label="Live side-view camera. Video stays on this device." />
-          {(!cameraOn || !assessment?.trackable) && <FitGuide />}
-          {cameraOn && <JointOverlay landmarks={landmarks} assessment={assessment} />}
+          {(!cameraOn || !liveAssessment?.trackable) && <FitGuide />}
+          {cameraOn && <JointOverlay landmarks={landmarks} assessment={liveAssessment} />}
           {stage === 'loading' && <div className="form-camera-overlay" role="status"><Icon name="camera" size={30} /><strong>Opening camera…</strong><span>Loading the pose model on your device.</span></div>}
-          {stage === 'countdown' && <div className="form-camera-overlay form-countdown" role="status"><strong>{countdown}</strong><span>Hold the top position.</span></div>}
+          {stage === 'countdown' && <div className="form-camera-overlay form-countdown" role="status"><strong>{countdown}</strong><span>Get into position.<br />Posture checks start after the countdown.</span></div>}
           {stage === 'paused' && <span className="form-paused-label">PAUSED</span>}
-          <span className="form-camera-caption">{cameraOn ? assessment?.trackable ? `${assessment.side === 'left' ? 'Left' : 'Right'} side tracked` : 'Whole side must be visible' : 'Side-view framing guide'}</span>
+          <span className="form-camera-caption">{cameraOn ? liveAssessment?.trackable ? `${liveAssessment.side === 'left' ? 'Left' : 'Right'} side tracked` : 'Looking for your side view' : 'Side-view framing guide'}</span>
         </div>
-        <div className="form-cue" role="status"><Icon name={assessment?.trackable && assessment.alignment === 'aligned' ? 'check' : 'camera'} size={20} /><p>{cue}</p></div>
-        <div className="form-measures"><div><span>ELBOW ANGLE</span><strong>{assessment?.trackable && assessment.elbowAngle !== null ? `${Math.round(assessment.elbowAngle)}°` : '—'}</strong></div><div><span>BODY LINE</span><strong>{alignmentLabel}</strong></div></div>
+        <div className="form-cue" role="status"><Icon name={liveAssessment?.trackable && liveAssessment.alignment === 'aligned' ? 'check' : 'camera'} size={20} /><p>{cue}</p></div>
+        <div className="form-measures"><div><span>ELBOW ANGLE</span><strong>{liveAssessment?.trackable && liveAssessment.elbowAngle !== null ? `${Math.round(liveAssessment.elbowAngle)}°` : '—'}</strong></div><div><span>BODY LINE</span><strong>{alignmentLabel}</strong></div></div>
         <div className="form-rep-counts"><div><output aria-label="Reps meeting checks" aria-live="polite">{counts.reps}</output><span>reps meeting checks</span></div><div><output aria-label="Full attempts not meeting checks" aria-live="polite">{counts.rejected}</output><span>full attempts not meeting checks</span></div></div>
         {runtime.current.hasStarted && <p className="form-last-feedback" aria-live="polite">{counts.feedback}</p>}
       </div>

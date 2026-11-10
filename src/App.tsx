@@ -13,6 +13,7 @@ import SettingsPanel from './ui/SettingsPanel';
 import HistoryPanel from './ui/HistoryPanel';
 import WorkoutPanel from './ui/WorkoutPanel';
 import FormCheckPanel from './ui/FormCheckPanel';
+import { applyAppUpdate, hasAppUpdate, subscribeAppUpdate } from './lib/appUpdate';
 export type Screen = 'home'|'setup'|'countdown'|'playing'|'paused'|'complete';
 export type SetupPhase = 'loading'|'position'|'top'|'bottom'|'error';
 type Tab = 'workout'|'form'|'history'|'settings';
@@ -24,6 +25,7 @@ export default function App({formPoseSourceFactory}:{formPoseSourceFactory?:(onE
  const [mode,setMode]=useState<GameMode>('practice');const [history,setHistory]=useState<WorkoutSet[]>([]);
  const [result,setResult]=useState<WorkoutSet|null>(null);const [photoUrl,setPhotoUrl]=useState('');
  const [notice,setNotice]=useState('');const [error,setError]=useState('');const [pauseReason,setPauseReason]=useState('');
+ const [updateAvailable,setUpdateAvailable]=useState(hasAppUpdate);const [updating,setUpdating]=useState(false);
  const [stats,setStats]=useState({reps:0,pipes:0,seconds:0,depth:0});const [pose,setPose]=useState<PoseFrame|null>(null);
  const [busy,setBusy]=useState(false);const [offline,setOffline]=useState(!navigator.onLine);const [canInstall,setCanInstall]=useState(false);
  const installPrompt=useRef<(Event&{prompt:()=>Promise<void>;userChoice:Promise<{outcome:string}>})|null>(null);
@@ -39,6 +41,7 @@ export default function App({formPoseSourceFactory}:{formPoseSourceFactory?:(onE
  const theme=getTheme(settings.theme);const active=formActive||['setup','countdown','playing','paused'].includes(screen);
  const updateSettings=(patch:Partial<Settings>)=>{if(patch.sound)audio.current.unlock();setSettings(s=>({...s,...patch}));};
  useEffect(()=>{if(!saveSettings(settings))setNotice('Settings could not be saved. Browser storage may be full.');},[settings]);
+ useEffect(()=>subscribeAppUpdate(()=>setUpdateAvailable(hasAppUpdate())),[]);
  useEffect(()=>{
   void loadHistory().then(setHistory).catch(()=>setNotice('History storage is unavailable. Sets can still be played.'));
   void loadPhoto().then(p=>{if(p)setPhotoUrl(URL.createObjectURL(p));}).catch(()=>undefined);
@@ -161,7 +164,8 @@ export default function App({formPoseSourceFactory}:{formPoseSourceFactory?:(onE
  const cameraBackground=settings.background==='camera'||settings.background==='blurred';const showVideo=screen==='setup'||(cameraBackground&&mode==='camera'&&active);const videoWidth=video.current?.videoWidth||640;const videoHeight=video.current?.videoHeight||480;
  return <div className={`app theme-${theme.id}${settings.highContrast?' high-contrast':''}${settings.reducedMotion?' reduced-motion':''}`} style={css}>
   <header className="header"><button className="brand" onClick={()=>{if(!active){goHome();setTab('workout');}}} disabled={active} aria-label="Drop and Flap home"><PixelBird/><span>DROP <span className="brand-amp">&</span> FLAP</span></button><span className="local-tag"><Icon name="shield" size={14}/> ON YOUR DEVICE</span><button className="icon-button" onClick={()=>{audio.current.unlock();updateSettings({sound:!settings.sound});}} aria-label={settings.sound?'Mute sound':'Enable sound'} title={settings.sound?'Mute sound':'Enable sound'}><Icon name={settings.sound?'sound':'mute'}/></button></header>
-  <nav className="tabs" aria-label="Main navigation">{(['workout','form','history','settings'] as Tab[]).map(t=><button key={t} className={tab===t?'selected':''} aria-current={tab===t?'page':undefined} onClick={()=>{if(!active)setTab(t);}} disabled={active&&tab!==t}><Icon name={t==='workout'?'bolt':t==='form'?'check':t}/>{t==='workout'?'PLAY':t.toUpperCase()}</button>)}<span className="version">V1.1 <span className="status-dot"/> {offline?'OFFLINE':'READY'}</span></nav>
+  <nav className="tabs" aria-label="Main navigation">{(['workout','form','history','settings'] as Tab[]).map(t=><button key={t} className={tab===t?'selected':''} aria-current={tab===t?'page':undefined} onClick={()=>{if(!active)setTab(t);}} disabled={active&&tab!==t}><Icon name={t==='workout'?'bolt':t==='form'?'check':t}/>{t==='workout'?'PLAY':t.toUpperCase()}</button>)}<span className="version">V1.1.1 <span className="status-dot"/> {offline?'OFFLINE':'READY'}</span></nav>
+  {updateAvailable&&!active&&tab!=='form'&&<div className="notice app-update" role="status"><span>A new version is ready.</span><button className="button secondary" type="button" disabled={updating} onClick={()=>{if(!active)setUpdating(applyAppUpdate());}}>{updating?'Updating…':'Update app'}</button></div>}
   {notice&&<div className="notice" role="status"><span>{notice}</span><button className="icon-button" onClick={()=>setNotice('')} aria-label="Dismiss message"><Icon name="close" size={16}/></button></div>}
   <main>
   {tab==='form'&&<FormCheckPanel poseSourceFactory={formPoseSourceFactory} settings={settings} onActiveChange={setFormActive} onSaved={savedSet=>setHistory(h=>[savedSet,...h.filter(s=>s.id!==savedSet.id)])} onNotice={setNotice}/>}
